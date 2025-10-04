@@ -66,7 +66,7 @@ function App() {
       if (params.lon) queryParams.append('lon', params.lon.toString());
       if (params.city) queryParams.append('city', params.city);
       if (params.country) queryParams.append('country', params.country);
-      queryParams.append('include', dataType);
+      dataType !== 'heat' && queryParams.append('include', dataType);
 
       const apiUrl = `${import.meta.env.VITE_API_BASE_URL}/environment?${queryParams}`;
       const response = await fetch(apiUrl);

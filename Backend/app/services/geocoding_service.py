@@ -37,9 +37,9 @@ class GeocodingService:
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        print(f"✅ Geocoding success: {data.get('display_name', 'No display name')}")
+                        print(f"Geocoding success: {data.get('display_name', 'No display name')}")
                         result = self._parse_nominatim_response(data)
-                        print(f"📍 Parsed location: {result}")
+                        print(f"Parsed location: {result}")
                         return result
                     else:
                         return self._get_fallback_location(lat, lon)
@@ -83,17 +83,17 @@ class GeocodingService:
                             result = data[0]
                             lat = float(result['lat'])
                             lon = float(result['lon'])
-                            print(f"✅ Found coordinates: {lat}, {lon} for {query}")
+                            print(f"Found coordinates: {lat}, {lon} for {query}")
                             return lat, lon
                         else:
-                            print(f"❌ No results found for {query}")
+                            print(f"No results found for {query}")
                             return self._get_fallback_coordinates(city_name)
                     else:
-                        print(f"❌ API error: {response.status}")
+                        print(f"API error: {response.status}")
                         return self._get_fallback_coordinates(city_name)
                         
         except Exception as e:
-            print(f"❌ Forward geocoding error: {str(e)}")
+            print(f"Forward geocoding error: {str(e)}")
             return self._get_fallback_coordinates(city_name)
     
     def _get_fallback_coordinates(self, city_name: str) -> Tuple[float, float]:
