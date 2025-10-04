@@ -3,6 +3,10 @@ from typing import Optional
 from app.models import EnvironmentResponse
 from app.services.aggregator import EnvironmentAggregator
 from app.services.geocoding_service import GeocodingService
+from app.services.cache_service import cache_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 aggregator = EnvironmentAggregator()
@@ -69,6 +73,27 @@ async def get_environment(
     
     print(f"Final coordinates: ({final_lat}, {final_lon}), city: {final_city}")
     
-    return await aggregator.get_environment_data(
+    # Check cache first - only for queries without include parameter
+    if include_list is None:
+        logger.info("Checking cache for full environment data")
+        cached_data = await cache_service.get_cached_data(
+            final_city, final_country, final_lat, final_lon
+        )
+        if cached_data:
+            logger.info("Returning cached data")
+            return EnvironmentResponse(**cached_data)
+    
+    # Get fresh data
+    response = await aggregator.get_environment_data(
         final_lat, final_lon, final_city, final_country, include_list
     )
+    
+    # Save to cache only if no include parameter (full data)
+    if include_list is None:
+        logger.info("Saving full environment data to cache")
+        await cache_service.save_data(
+            final_city, final_country, final_lat, final_lon, 
+            response.dict()
+        )
+    
+    return response

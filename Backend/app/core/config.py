@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list = ["*"]
     
+    # Database
+    MONGO_URL: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

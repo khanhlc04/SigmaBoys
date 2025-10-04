@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1 import environment
+from app.api.v1 import environment, cache
+from app.services.database import db_service
 
 # Khởi tạo app
 app = FastAPI(
@@ -25,6 +26,23 @@ app.include_router(
     prefix=settings.API_V1_PREFIX,
     tags=["Environment"]
 )
+
+app.include_router(
+    cache.router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["Cache"]
+)
+
+# MongoDB connection events
+@app.on_event("startup")
+async def startup_event():
+    """Connect to MongoDB on startup"""
+    await db_service.connect_to_mongo()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Disconnect from MongoDB on shutdown"""
+    await db_service.close_mongo_connection()
 
 @app.get("/")
 async def root():

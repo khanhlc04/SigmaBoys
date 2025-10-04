@@ -27,6 +27,7 @@ Một hệ thống API toàn diện để thu thập và phân tích dữ liệu
 
 ### Yêu cầu hệ thống
 - Python 3.11+
+- MongoDB (Optional - for caching)
 - OpenAI API Key
 - Kết nối Internet
 
@@ -48,14 +49,37 @@ Tạo file `.env` trong thư mục gốc:
 # OpenAI API Key (bắt buộc)
 OPENAI_API_KEY=sk-proj-your-openai-api-key-here
 
+# OpenAI API Key
+OPENAI_API_KEY=your-openai-key-here
+
 # Air Quality API
 WAQI_API_KEY=your-waqi-token-here
 
 # Weather API (OpenWeather)
 OPENWEATHER_API_KEY=your-openweather-key-here
+
+# MongoDB (Optional - for caching)
+MONGO_URL=mongodb://localhost:27017
 ```
 
-### 4. Chạy server
+### 4. (Optional) Cài đặt MongoDB cho cache
+```bash
+# Ubuntu/Debian
+sudo apt install mongodb
+
+# macOS với Homebrew
+brew install mongodb/brew/mongodb-community
+
+# Hoặc sử dụng MongoDB Atlas (cloud)
+# Điền MONGO_URL với connection string từ Atlas
+```
+
+### 5. Test MongoDB connection (nếu sử dụng cache)
+```bash
+python test_mongodb.py
+```
+
+### 6. Chạy server
 ```bash
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -81,6 +105,18 @@ GET /api/v1/environment
 - `city` (string, optional): Tên thành phố
 - `country` (string, optional): Tên quốc gia
 - `include` (array, optional): Danh sách services cần lấy
+
+#### 💾 Cache Management
+```http
+GET /api/v1/cache/status      # Kiểm tra trạng thái cache
+GET /api/v1/cache/stats       # Thống kê cache
+POST /api/v1/cache/clear-expired  # Xóa cache hết hạn
+```
+
+**Lưu ý về Cache:**
+- Cache chỉ áp dụng cho queries **không có** parameter `include`
+- Cache tự động expires sau 1 giờ
+- Cải thiện performance đáng kể cho các query thường xuyên
 
 ### Ví dụ sử dụng
 

@@ -103,7 +103,7 @@ function App() {
             apiPath: 'cached'
           }
         }));
-        addNotification(`${dataType} data loaded from cache`, 'info');
+        // addNotification(`${dataType} data loaded from cache`, 'info');
         updateCacheStats();
         return;
       }
@@ -188,7 +188,7 @@ function App() {
             apiPath: 'cached'
           }
         }));
-        addNotification('AI Environmental Analysis loaded from cache', 'info');
+        // addNotification('AI Environmental Analysis loaded from cache', 'info');
         updateCacheStats();
         return;
       }
