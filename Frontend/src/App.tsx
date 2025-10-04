@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Globe, Search, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Globe, Search, Loader2, CheckCircle2, AlertCircle, Database, Trash2 } from 'lucide-react';
+import { LocalStorageCache } from './utils/cache';
 import './App.css';
 
 interface SearchParams {
@@ -38,6 +39,33 @@ function App() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [dataState, setDataState] = useState<DataStates>({});
   const [hasSearched, setHasSearched] = useState(false);
+  const [cacheStats, setCacheStats] = useState({ total: 0, expired: 0, active: 0 });
+  const [showCacheDetails, setShowCacheDetails] = useState(false);
+
+  // Update cache stats
+  const updateCacheStats = () => {
+    setCacheStats(LocalStorageCache.getStats());
+  };
+
+  // Initialize cache stats on component mount and auto-clean expired
+  useEffect(() => {
+    updateCacheStats();
+    // Auto-clean expired cache on app start
+    const cleaned = LocalStorageCache.cleanExpired();
+    if (cleaned > 0) {
+      setTimeout(() => {
+        addNotification(`Cleaned ${cleaned} expired cache entries`, 'info');
+      }, 1000);
+    }
+    // Show cache system info
+    setTimeout(() => {
+      const stats = LocalStorageCache.getStats();
+      if (stats.active > 0) {
+        addNotification(`Cache system loaded: ${stats.active} cached entries available`, 'info');
+      }
+      updateCacheStats();
+    }, 500);
+  }, []);
 
   // Notifications
   const [notifications, setNotifications] = useState<Array<{
@@ -54,7 +82,33 @@ function App() {
     }, 3000);
   };
 
-  const fetchDataType = async (dataType: string, params: SearchParams) => {
+  const fetchDataType = async (dataType: string, params: SearchParams, forceRefresh = false) => {
+    // Check cache first if not forcing refresh
+    if (!forceRefresh) {
+      const cachedData = LocalStorageCache.get({
+        dataType,
+        lat: params.lat,
+        lon: params.lon,
+        city: params.city,
+        country: params.country
+      });
+
+      if (cachedData) {
+        setDataState(prev => ({
+          ...prev,
+          [dataType]: { 
+            data: cachedData, 
+            loading: false, 
+            error: null,
+            apiPath: 'cached'
+          }
+        }));
+        addNotification(`${dataType} data loaded from cache`, 'info');
+        updateCacheStats();
+        return;
+      }
+    }
+
     setDataState(prev => ({
       ...prev,
       [dataType]: { ...prev[dataType], loading: true, error: null }
@@ -74,11 +128,21 @@ function App() {
       if (!response.ok) throw new Error(`Failed to fetch ${dataType}`);
       
       const result = await response.json();
+      const resultData = result[dataType] || result;
+      
+      // Cache the result
+      LocalStorageCache.set({
+        dataType,
+        lat: params.lat,
+        lon: params.lon,
+        city: params.city,
+        country: params.country
+      }, resultData);
       
       setDataState(prev => ({
         ...prev,
         [dataType]: { 
-          data: result[dataType] || result, 
+          data: resultData, 
           loading: false, 
           error: null,
           apiPath: apiUrl 
@@ -86,10 +150,11 @@ function App() {
       }));
 
       addNotification(`${dataType} data loaded successfully`, 'success');
+      updateCacheStats();
       
       // If this is environmental_quality (AI analysis), fetch with all available data
       if (dataType === 'environmental_quality') {
-        await fetchAIAnalysis(searchParams);
+        await fetchAIAnalysis(searchParams, forceRefresh);
       }
       
     } catch (error) {
@@ -102,7 +167,33 @@ function App() {
     }
   };
 
-  const fetchAIAnalysis = async (params: SearchParams) => {
+  const fetchAIAnalysis = async (params: SearchParams, forceRefresh = false) => {
+    // Check cache first if not forcing refresh
+    if (!forceRefresh) {
+      const cachedData = LocalStorageCache.get({
+        dataType: 'environmental_quality',
+        lat: params.lat,
+        lon: params.lon,
+        city: params.city,
+        country: params.country
+      });
+
+      if (cachedData) {
+        setDataState(prev => ({
+          ...prev,
+          environmental_quality: { 
+            data: cachedData, 
+            loading: false, 
+            error: null,
+            apiPath: 'cached'
+          }
+        }));
+        addNotification('AI Environmental Analysis loaded from cache', 'info');
+        updateCacheStats();
+        return;
+      }
+    }
+
     setDataState(prev => ({
       ...prev,
       environmental_quality: { ...prev.environmental_quality, loading: true, error: null }
@@ -126,6 +217,15 @@ function App() {
       // Extract environmental_quality field from the response
       const aiAnalysisData = result.environmental_quality || {};
       
+      // Cache the result
+      LocalStorageCache.set({
+        dataType: 'environmental_quality',
+        lat: params.lat,
+        lon: params.lon,
+        city: params.city,
+        country: params.country
+      }, aiAnalysisData);
+      
       setDataState(prev => ({
         ...prev,
         environmental_quality: { 
@@ -137,6 +237,7 @@ function App() {
       }));
 
       addNotification('AI Environmental Analysis completed', 'success');
+      updateCacheStats();
       
       // Log AI analysis results for development
       console.log('AI Analysis Results:', aiAnalysisData);
@@ -176,7 +277,7 @@ function App() {
       
       // Auto fetch if already searched and adding new type
       if (hasSearched && !prev.includes(dataType)) {
-        setTimeout(() => fetchDataType(dataType, searchParams), 100);
+        setTimeout(() => fetchDataType(dataType, searchParams, false), 100);
       }
       
       return newTypes;
@@ -262,14 +363,47 @@ function App() {
             </div>
           </div>
 
-          <button
-            onClick={handleSearch}
-            disabled={selectedTypes.length === 0}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-400 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center space-x-2"
-          >
-            <Search className="w-5 h-5" />
-            <span>Search Environmental Data</span>
-          </button>
+                    {/* Cache Management & Action Buttons */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Cache Statistics */}
+            <div className="flex items-center space-x-4 text-sm text-gray-600">
+              <div className="flex items-center space-x-2">
+                <Database className="w-4 h-4" />
+                <span>Cache: {cacheStats.active} active, {cacheStats.expired} expired</span>
+              </div>
+              <button
+                onClick={() => {
+                  LocalStorageCache.cleanExpired();
+                  updateCacheStats();
+                  addNotification('Expired cache cleaned', 'success');
+                }}
+                className="flex items-center space-x-1 px-3 py-1 bg-yellow-50 text-yellow-700 rounded-lg hover:bg-yellow-100 transition-colors"
+              >
+                <span>Clean Expired</span>
+              </button>
+              <button
+                onClick={() => {
+                  LocalStorageCache.clearAll();
+                  updateCacheStats();
+                  addNotification('All cache cleared', 'success');
+                }}
+                className="flex items-center space-x-1 px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Clear All</span>
+              </button>
+            </div>
+
+            {/* Search Button */}
+            <button
+              onClick={handleSearch}
+              disabled={selectedTypes.length === 0}
+              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              <Search className="w-5 h-5 inline-block mr-2" />
+              Search Environment Data
+            </button>
+          </div>
         </div>
 
         {/* Results Section */}
@@ -332,20 +466,37 @@ function App() {
                         {state.data && !state.loading && !state.error && (
                           <>
                             <CheckCircle2 className="w-4 h-4 text-green-500" />
-                            <span className="text-sm text-green-600">Loaded</span>
+                            <span className="text-sm text-green-600">
+                              {state.apiPath === 'cached' ? 'Cached' : 'Loaded'}
+                            </span>
                           </>
                         )}
                       </div>
                       {/* API Path Display */}
                       {state.apiPath && (
                         <div className="mt-2 p-2 bg-gray-50 rounded-lg border">
-                          <div className="flex items-center space-x-2">
-                            <Globe className="w-4 h-4 text-gray-500" />
-                            <span className="text-xs font-medium text-gray-600">API Endpoint:</span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <Globe className="w-4 h-4 text-gray-500" />
+                              <span className="text-xs font-medium text-gray-600">
+                                {state.apiPath === 'cached' ? 'Data Source: Cache' : 'API Endpoint:'}
+                              </span>
+                            </div>
+                            {state.data && (
+                              <button
+                                onClick={() => fetchDataType(typeKey, searchParams, true)}
+                                disabled={state.loading}
+                                className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                              >
+                                Refresh
+                              </button>
+                            )}
                           </div>
-                          <code className="text-xs text-gray-700 break-all block mt-1">
-                            {decodeURIComponent(state.apiPath)}
-                          </code>
+                          {state.apiPath !== 'cached' && (
+                            <code className="text-xs text-gray-700 break-all block mt-1">
+                              {decodeURIComponent(state.apiPath)}
+                            </code>
+                          )}
                         </div>
                       )}
                     </div>
@@ -366,7 +517,7 @@ function App() {
                         <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
                         <p className="text-red-600 font-medium">{state.error}</p>
                         <button
-                          onClick={() => fetchDataType(typeKey, searchParams)}
+                          onClick={() => fetchDataType(typeKey, searchParams, true)}
                           className="mt-3 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                         >
                           Retry
@@ -413,20 +564,37 @@ function App() {
                         {aiState.data && !aiState.loading && !aiState.error && (
                           <>
                             <CheckCircle2 className="w-4 h-4 text-green-500" />
-                            <span className="text-sm text-green-600">Loaded</span>
+                            <span className="text-sm text-green-600">
+                              {aiState.apiPath === 'cached' ? 'Cached' : 'Loaded'}
+                            </span>
                           </>
                         )}
                       </div>
                       {/* API Path Display */}
                       {aiState.apiPath && (
                         <div className="mt-2 p-2 bg-gray-50 rounded-lg border">
-                          <div className="flex items-center space-x-2">
-                            <Globe className="w-4 h-4 text-gray-500" />
-                            <span className="text-xs font-medium text-gray-600">API Endpoint:</span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <Globe className="w-4 h-4 text-gray-500" />
+                              <span className="text-xs font-medium text-gray-600">
+                                {aiState.apiPath === 'cached' ? 'Data Source: Cache' : 'API Endpoint:'}
+                              </span>
+                            </div>
+                            {aiState.data && (
+                              <button
+                                onClick={() => fetchAIAnalysis(searchParams, true)}
+                                disabled={aiState.loading}
+                                className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                              >
+                                Refresh
+                              </button>
+                            )}
                           </div>
-                          <code className="text-xs text-gray-700 break-all block mt-1">
-                            {decodeURIComponent(aiState.apiPath)}
-                          </code>
+                          {aiState.apiPath !== 'cached' && (
+                            <code className="text-xs text-gray-700 break-all block mt-1">
+                              {decodeURIComponent(aiState.apiPath)}
+                            </code>
+                          )}
                         </div>
                       )}
                     </div>
@@ -447,7 +615,7 @@ function App() {
                         <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
                         <p className="text-red-600 font-medium">{aiState.error}</p>
                         <button
-                          onClick={() => fetchAIAnalysis(searchParams)}
+                          onClick={() => fetchAIAnalysis(searchParams, true)}
                           className="mt-3 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                         >
                           Retry
